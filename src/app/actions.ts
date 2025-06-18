@@ -16,7 +16,7 @@ export type PhotoGenerationResult = z.infer<typeof PhotoGenerationResultSchema>;
 
 // Server action to handle photo generation
 export async function handleGeneratePhotoAction(
-  values: GeneratePhotoInput // This type now includes optional referencePhotoDataUri
+  values: GeneratePhotoInput // This type now includes optional referencePhotoDataUris (array)
 ): Promise<PhotoGenerationResult> {
   try {
     // Input validation is handled by the Genkit flow's inputSchema.

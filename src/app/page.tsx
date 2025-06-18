@@ -35,6 +35,8 @@ import { Separator } from "@/components/ui/separator";
 
 const MAX_HISTORY_ITEMS = 10;
 const LOCAL_STORAGE_KEY = "photoGeniusHistory";
+const MAX_REFERENCE_IMAGES = 5;
+const MAX_FILE_SIZE_MB = 5;
 
 const formSchema = z.object({
   prompt: z.string().min(10, {
@@ -42,8 +44,12 @@ const formSchema = z.object({
   }).max(1000, {
     message: "Prompt must not exceed 1000 characters."
   }),
-  referenceImage: typeof window !== 'undefined' 
-    ? z.instanceof(File).optional().refine(file => !file || file.size <= 5 * 1024 * 1024, "Max file size is 5MB.") 
+  referenceImages: typeof window !== 'undefined' 
+    ? z.array(
+        z.instanceof(File).refine(file => file.size <= MAX_FILE_SIZE_MB * 1024 * 1024, `Max file size per image is ${MAX_FILE_SIZE_MB}MB.`)
+      )
+      .optional()
+      .refine(files => !files || files.length <= MAX_REFERENCE_IMAGES, `You can upload a maximum of ${MAX_REFERENCE_IMAGES} reference images.`)
     : z.any().optional(),
 });
 
@@ -51,17 +57,16 @@ export default function PhotoGeniusPage() {
   const [imageUrl, setImageUrl] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [referenceImagePreview, setReferenceImagePreview] = React.useState<string | null>(null);
+  const [referenceImagePreviews, setReferenceImagePreviews] = React.useState<string[]>([]);
   const [generatedHistory, setGeneratedHistory] = React.useState<string[]>([]);
   const { toast } = useToast();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       prompt: "",
-      referenceImage: undefined,
+      referenceImages: [],
     },
   });
 
@@ -77,28 +82,49 @@ export default function PhotoGeniusPage() {
   }, []);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      form.setValue("referenceImage", file, { shouldValidate: true });
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setReferenceImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      form.setValue("referenceImage", undefined);
-      setReferenceImagePreview(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+    const files = event.target.files;
+    if (files) {
+      const currentFiles = form.getValues().referenceImages || [];
+      const newFilesArray = Array.from(files);
+      const combinedFiles = [...currentFiles, ...newFilesArray].slice(0, MAX_REFERENCE_IMAGES);
+      
+      form.setValue("referenceImages", combinedFiles, { shouldValidate: true });
+
+      const newPreviews: string[] = [];
+      const fileReadPromises = combinedFiles.map(file => {
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      });
+
+      Promise.all(fileReadPromises)
+        .then(previews => setReferenceImagePreviews(previews))
+        .catch(err => {
+          console.error("Error reading files for preview:", err);
+          toast({ variant: "destructive", title: "Error", description: "Could not generate previews for some images." });
+        });
+      
+      // If user selected files, don't clear the input. If they cancelled, event.target.files might be empty.
+      // If combinedFiles is empty after logic, then clear the input.
+      if (combinedFiles.length === 0 && fileInputRef.current) {
+         fileInputRef.current.value = "";
       }
     }
   };
 
-  const handleRemoveReferenceImage = () => {
-    form.setValue("referenceImage", undefined, { shouldValidate: true });
-    setReferenceImagePreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""; // Reset the file input
+  const handleRemoveReferenceImage = (indexToRemove: number) => {
+    const currentFiles = form.getValues().referenceImages || [];
+    const updatedFiles = currentFiles.filter((_, index) => index !== indexToRemove);
+    form.setValue("referenceImages", updatedFiles, { shouldValidate: true });
+
+    const updatedPreviews = referenceImagePreviews.filter((_, index) => index !== indexToRemove);
+    setReferenceImagePreviews(updatedPreviews);
+
+    if (updatedFiles.length === 0 && fileInputRef.current) {
+      fileInputRef.current.value = ""; 
     }
   };
 
@@ -107,18 +133,22 @@ export default function PhotoGeniusPage() {
     setImageUrl(null);
     setError(null);
 
-    let referencePhotoDataUri: string | undefined = undefined;
-    if (values.referenceImage) {
+    let referencePhotoDataUris: string[] | undefined = undefined;
+    if (values.referenceImages && values.referenceImages.length > 0) {
       try {
-        referencePhotoDataUri = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = (error) => reject(error);
-          reader.readAsDataURL(values.referenceImage as File);
-        });
+        referencePhotoDataUris = await Promise.all(
+          values.referenceImages.map(file => {
+            return new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = (error) => reject(error);
+              reader.readAsDataURL(file);
+            });
+          })
+        );
       } catch (e) {
-        setError("Failed to read reference image.");
-        toast({ variant: "destructive", title: "Error", description: "Could not process the reference image." });
+        setError("Failed to read reference image(s).");
+        toast({ variant: "destructive", title: "Error", description: "Could not process the reference image(s)." });
         setIsLoading(false);
         return;
       }
@@ -126,7 +156,7 @@ export default function PhotoGeniusPage() {
 
     const actionInput: GeneratePhotoInput = {
       prompt: values.prompt,
-      ...(referencePhotoDataUri && { referencePhotoDataUri }),
+      ...(referencePhotoDataUris && referencePhotoDataUris.length > 0 && { referencePhotoDataUris }),
     };
 
     try {
@@ -299,52 +329,57 @@ export default function PhotoGeniusPage() {
 
                 <FormField
                   control={form.control}
-                  name="referenceImage"
+                  name="referenceImages"
                   render={({ fieldState }) => (
                     <FormItem>
-                      <FormLabel htmlFor="reference-image-input" className="text-lg font-medium text-foreground">
-                        Optional: Add Reference Image
+                      <FormLabel htmlFor="reference-images-input" className="text-lg font-medium text-foreground">
+                        Optional: Add Reference Images (up to {MAX_REFERENCE_IMAGES})
                       </FormLabel>
                       <FormControl>
                         <Input
-                          id="reference-image-input"
+                          id="reference-images-input"
                           type="file"
                           accept="image/*"
+                          multiple 
                           onChange={handleFileChange}
-                          disabled={isLoading}
+                          disabled={isLoading || (referenceImagePreviews.length >= MAX_REFERENCE_IMAGES)}
                           className="text-base border-input focus:border-primary focus:ring-primary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                          aria-describedby="reference-image-form-message"
+                          aria-describedby="reference-images-form-message"
                           ref={fileInputRef}
                         />
                       </FormControl>
-                      <FormMessage id="reference-image-form-message">{fieldState.error?.message}</FormMessage>
+                      <FormMessage id="reference-images-form-message">{fieldState.error?.message}</FormMessage>
                     </FormItem>
                   )}
                 />
 
-                {referenceImagePreview && (
+                {referenceImagePreviews.length > 0 && (
                   <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">Reference image preview:</p>
-                    <div className="relative group w-28 h-28">
-                      <Image
-                        src={referenceImagePreview}
-                        alt="Reference image preview"
-                        width={100}
-                        height={100}
-                        className="rounded-md border border-border object-cover w-full h-full"
-                        data-ai-hint="reference preview"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute top-1 right-1 h-6 w-6 bg-black/50 text-white hover:bg-black/70 hover:text-white opacity-70 group-hover:opacity-100 transition-opacity"
-                        onClick={handleRemoveReferenceImage}
-                        aria-label="Remove reference image"
-                        disabled={isLoading}
-                      >
-                        <XCircle className="h-4 w-4" />
-                      </Button>
+                    <p className="text-sm text-muted-foreground">Reference image(s) preview:</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {referenceImagePreviews.map((previewSrc, index) => (
+                        <div key={index} className="relative group aspect-square">
+                          <Image
+                            src={previewSrc}
+                            alt={`Reference image preview ${index + 1}`}
+                            layout="fill"
+                            objectFit="cover"
+                            className="rounded-md border border-border"
+                            data-ai-hint="reference preview"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-1 right-1 h-6 w-6 bg-black/50 text-white hover:bg-black/70 hover:text-white opacity-70 group-hover:opacity-100 transition-opacity z-10"
+                            onClick={() => handleRemoveReferenceImage(index)}
+                            aria-label={`Remove reference image ${index + 1}`}
+                            disabled={isLoading}
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
