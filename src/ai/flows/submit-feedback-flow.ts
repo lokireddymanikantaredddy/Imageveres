@@ -1,7 +1,7 @@
 
 'use server';
 /**
- * @fileOverview Handles submission of user feedback for generated images.
+ * @fileOverview Handles submission of user feedback for generated images and saves it to Firestore.
  *
  * - submitFeedback - A function that handles the feedback submission process.
  * - SubmitFeedbackInput - The input type for the submitFeedback function.
@@ -10,6 +10,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { firestoreAdmin } from '@/lib/firebase-admin'; // Import the initialized Firestore admin instance
 
 const SubmitFeedbackInputSchema = z.object({
   name: z.string().optional().describe('The name of the user providing feedback (optional).'),
@@ -29,8 +30,6 @@ export async function submitFeedback(input: SubmitFeedbackInput): Promise<Submit
   return submitFeedbackFlow(input);
 }
 
-// This is a placeholder flow. In a real application, you would integrate
-// with a database (e.g., Firebase Firestore) here to store the feedback.
 const submitFeedbackFlow = ai.defineFlow(
   {
     name: 'submitFeedbackFlow',
@@ -38,26 +37,48 @@ const submitFeedbackFlow = ai.defineFlow(
     outputSchema: SubmitFeedbackOutputSchema,
   },
   async (input) => {
-    console.log('Feedback received:', input);
+    console.log('Feedback received for Firestore:', input);
 
-    // **TODO**: Integrate with a database here.
-    // Example (conceptual - requires Firebase setup):
-    // try {
-    //   const { getFirestore } = await import('firebase-admin/firestore'); // Requires firebase-admin
-    //   const db = getFirestore();
-    //   await db.collection('imageFeedback').add({
-    //     name: input.name || 'Anonymous',
-    //     feedback: input.feedbackText,
-    //     imageUrl: input.imageUrl,
-    //     submittedAt: new Date(input.timestamp),
-    //   });
-    //   return { success: true, message: 'Feedback submitted successfully!' };
-    // } catch (error) {
-    //   console.error('Error saving feedback to Firestore:', error);
-    //   return { success: false, message: 'Failed to submit feedback due to a server error.' };
-    // }
+    if (!firestoreAdmin) {
+      console.error(
+        'Firestore Admin SDK is not initialized. ' +
+        'This usually means GOOGLE_APPLICATION_CREDENTIALS is not set or the SDK failed to initialize. ' +
+        'Feedback cannot be saved to Firestore.'
+      );
+      return { 
+        success: false, 
+        message: 'Server configuration error: Unable to connect to the feedback database. Please contact support if this issue persists.' 
+      };
+    }
 
-    // For now, we'll just simulate success.
-    return { success: true, message: 'Feedback submitted successfully! (Logged to console)' };
+    try {
+      const feedbackData = {
+        name: input.name || 'Anonymous',
+        feedbackText: input.feedbackText,
+        imageUrl: input.imageUrl,
+        timestamp: new Date(input.timestamp), // Convert ISO string to Firestore Timestamp compatible Date object
+        // You could add more fields here, e.g., user ID if you implement authentication
+      };
+
+      await firestoreAdmin.collection('imageFeedback').add(feedbackData);
+      
+      console.log('Feedback successfully saved to Firestore document with ID:', feedbackData); // Log on success
+      return { success: true, message: 'Feedback submitted successfully and saved!' };
+
+    } catch (error) {
+      console.error('Error saving feedback to Firestore:', error);
+      let publicErrorMessage = 'Failed to submit feedback due to a server error. Please try again later.';
+      
+      // Check for common Firebase/GCP errors
+      if (error instanceof Error) {
+        if (error.message.includes('Missing or insufficient permissions') || 
+            (error.hasOwnProperty('code') && (error as any).code === 7)) { // Firestore permission denied code
+          publicErrorMessage = 'Server permission error: Unable to save feedback. Please contact support.';
+        } else if (error.message.includes('The project is unavailable')) {
+           publicErrorMessage = 'The feedback service is temporarily unavailable. Please try again later.';
+        }
+      }
+      return { success: false, message: publicErrorMessage };
+    }
   }
 );
