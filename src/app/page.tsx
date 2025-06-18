@@ -4,9 +4,9 @@
 import * as React from "react";
 import Image from "next/image";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, useForm as useFeedbackForm } from "react-hook-form"; // Renamed for clarity
 import { z } from "zod";
-import { Loader2, Sparkles, Download, AlertCircle, UploadCloud, Trash2, Image as ImageIcon, XCircle } from "lucide-react";
+import { Loader2, Sparkles, Download, AlertCircle, UploadCloud, Trash2, Image as ImageIcon, XCircle, MessageSquareQuote, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,9 +28,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { handleGeneratePhotoAction, type PhotoGenerationResult } from "./actions";
+import { handleGeneratePhotoAction, type PhotoGenerationResult, handleFeedbackSubmitAction, type FeedbackSubmissionResult } from "./actions";
 import { useToast } from "@/hooks/use-toast";
 import type { GeneratePhotoInput } from "@/ai/flows/generate-photo";
+import type { SubmitFeedbackInput } from "@/ai/flows/submit-feedback-flow";
 import { Separator } from "@/components/ui/separator";
 
 const MAX_HISTORY_ITEMS = 10;
@@ -38,7 +39,7 @@ const LOCAL_STORAGE_KEY = "photoGeniusHistory";
 const MAX_REFERENCE_IMAGES = 5;
 const MAX_FILE_SIZE_MB = 5;
 
-const formSchema = z.object({
+const photoFormSchema = z.object({
   prompt: z.string().min(10, {
     message: "Prompt must be at least 10 characters.",
   }).max(1000, {
@@ -53,22 +54,42 @@ const formSchema = z.object({
     : z.any().optional(),
 });
 
+const feedbackFormSchema = z.object({
+  name: z.string().optional(),
+  feedbackText: z.string().min(5, {
+    message: "Feedback must be at least 5 characters.",
+  }).max(500, {
+    message: "Feedback must not exceed 500 characters."
+  }),
+});
+
+
 export default function PhotoGeniusPage() {
   const [imageUrl, setImageUrl] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [referenceImagePreviews, setReferenceImagePreviews] = React.useState<string[]>([]);
   const [generatedHistory, setGeneratedHistory] = React.useState<string[]>([]);
   const { toast } = useToast();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const photoForm = useForm<z.infer<typeof photoFormSchema>>({
+    resolver: zodResolver(photoFormSchema),
     defaultValues: {
       prompt: "",
       referenceImages: [],
     },
   });
+
+  const feedbackForm = useFeedbackForm<z.infer<typeof feedbackFormSchema>>({
+    resolver: zodResolver(feedbackFormSchema),
+    defaultValues: {
+      name: "",
+      feedbackText: "",
+    },
+  });
+
 
   React.useEffect(() => {
     try {
@@ -84,11 +105,11 @@ export default function PhotoGeniusPage() {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files) {
-      const currentFiles = form.getValues().referenceImages || [];
+      const currentFiles = photoForm.getValues().referenceImages || [];
       const newFilesArray = Array.from(files);
       const combinedFiles = [...currentFiles, ...newFilesArray].slice(0, MAX_REFERENCE_IMAGES);
       
-      form.setValue("referenceImages", combinedFiles, { shouldValidate: true });
+      photoForm.setValue("referenceImages", combinedFiles, { shouldValidate: true });
 
       const newPreviews: string[] = [];
       const fileReadPromises = combinedFiles.map(file => {
@@ -114,9 +135,9 @@ export default function PhotoGeniusPage() {
   };
 
   const handleRemoveReferenceImage = (indexToRemove: number) => {
-    const currentFiles = form.getValues().referenceImages || [];
+    const currentFiles = photoForm.getValues().referenceImages || [];
     const updatedFiles = currentFiles.filter((_, index) => index !== indexToRemove);
-    form.setValue("referenceImages", updatedFiles, { shouldValidate: true });
+    photoForm.setValue("referenceImages", updatedFiles, { shouldValidate: true });
 
     const updatedPreviews = referenceImagePreviews.filter((_, index) => index !== indexToRemove);
     setReferenceImagePreviews(updatedPreviews);
@@ -126,10 +147,11 @@ export default function PhotoGeniusPage() {
     }
   };
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onPhotoSubmit(values: z.infer<typeof photoFormSchema>) {
     setIsLoading(true);
-    setImageUrl(null);
+    setImageUrl(null); // Clear previous image and feedback form
     setError(null);
+    feedbackForm.reset(); // Reset feedback form if a new image is generated
 
     let referencePhotoDataUris: string[] | undefined = undefined;
     if (values.referenceImages && values.referenceImages.length > 0) {
@@ -251,6 +273,34 @@ export default function PhotoGeniusPage() {
     }
   }
 
+  async function onFeedbackSubmit(values: z.infer<typeof feedbackFormSchema>) {
+    if (!imageUrl) {
+      toast({ variant: "destructive", title: "Error", description: "No image selected for feedback." });
+      return;
+    }
+    setIsSubmittingFeedback(true);
+    try {
+      const feedbackInput: Omit<SubmitFeedbackInput, 'timestamp'> = {
+        name: values.name || undefined, // Ensure empty string becomes undefined
+        feedbackText: values.feedbackText,
+        imageUrl: imageUrl,
+      };
+      const result: FeedbackSubmissionResult = await handleFeedbackSubmitAction(feedbackInput);
+      if (result.success) {
+        toast({ title: "Feedback Submitted", description: result.message });
+        feedbackForm.reset();
+      } else {
+        toast({ variant: "destructive", title: "Feedback Failed", description: result.message });
+      }
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : "An unknown error occurred.";
+      toast({ variant: "destructive", title: "Feedback Error", description: errorMessage });
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  }
+
+
   const handleDownload = () => {
     if (!imageUrl) return;
     const link = document.createElement('a');
@@ -311,10 +361,10 @@ export default function PhotoGeniusPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-6 sm:p-8 space-y-6 sm:space-y-8">
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <Form {...photoForm}>
+              <form onSubmit={photoForm.handleSubmit(onPhotoSubmit)} className="space-y-6">
                 <FormField
-                  control={form.control}
+                  control={photoForm.control}
                   name="prompt"
                   render={({ field }) => (
                     <FormItem>
@@ -338,7 +388,7 @@ export default function PhotoGeniusPage() {
                 />
 
                 <FormField
-                  control={form.control}
+                  control={photoForm.control}
                   name="referenceImages"
                   render={({ fieldState }) => (
                     <FormItem>
@@ -396,7 +446,7 @@ export default function PhotoGeniusPage() {
 
                 <Button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || isSubmittingFeedback}
                   className="w-full bg-accent hover:bg-accent/90 text-accent-foreground text-lg py-3 rounded-md transition-all duration-150 ease-in-out transform hover:scale-[1.02] active:scale-[0.98] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-2"
                   aria-label="Generate photo based on prompt"
                   aria-live="polite"
@@ -432,7 +482,7 @@ export default function PhotoGeniusPage() {
                 <div className="aspect-square w-full overflow-hidden rounded-lg border-2 border-primary/30 shadow-lg bg-muted/30">
                   <Image
                     src={imageUrl}
-                    alt={form.getValues().prompt || "Generated photo"}
+                    alt={photoForm.getValues().prompt || "Generated photo"}
                     width={1024}
                     height={1024}
                     className="h-full w-full object-contain"
@@ -445,11 +495,73 @@ export default function PhotoGeniusPage() {
                   className="w-full text-base py-3 rounded-md border-primary/50 text-primary hover:bg-primary/10 hover:text-primary focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-2"
                   variant="outline"
                   aria-label="Download generated photo"
-                  disabled={isLoading}
+                  disabled={isLoading || isSubmittingFeedback}
                 >
                   <Download className="mr-2 h-5 w-5" />
                   Download Photo
                 </Button>
+
+                <Separator className="my-6 sm:my-8" />
+
+                <div className="space-y-4">
+                   <h3 className="text-xl sm:text-2xl font-headline text-center text-primary/90">
+                    Share Your Feedback
+                  </h3>
+                  <Form {...feedbackForm}>
+                    <form onSubmit={feedbackForm.handleSubmit(onFeedbackSubmit)} className="space-y-4">
+                      <FormField
+                        control={feedbackForm.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel htmlFor="feedback-name">Your Name (Optional)</FormLabel>
+                            <FormControl>
+                              <Input id="feedback-name" placeholder="Anonymous" {...field} disabled={isSubmittingFeedback || isLoading} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={feedbackForm.control}
+                        name="feedbackText"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel htmlFor="feedback-text">How was this creation?</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                id="feedback-text"
+                                placeholder="e.g., Loved the colors, but could be sharper!"
+                                className="resize-none"
+                                {...field}
+                                rows={3}
+                                disabled={isSubmittingFeedback || isLoading}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <Button
+                        type="submit"
+                        disabled={isSubmittingFeedback || isLoading || !imageUrl}
+                        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+                      >
+                        {isSubmittingFeedback ? (
+                          <>
+                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                            Submitting...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="mr-2 h-5 w-5" />
+                            Submit Feedback
+                          </>
+                        )}
+                      </Button>
+                    </form>
+                  </Form>
+                </div>
               </div>
             )}
              {isLoading && (
@@ -469,7 +581,7 @@ export default function PhotoGeniusPage() {
                     variant="outline"
                     size="sm"
                     onClick={handleClearHistory}
-                    disabled={isLoading}
+                    disabled={isLoading || isSubmittingFeedback}
                     aria-label="Clear image generation history"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
@@ -485,7 +597,12 @@ export default function PhotoGeniusPage() {
                         width={100}
                         height={100}
                         className="h-full w-full object-cover rounded-md border-2 border-transparent group-hover:border-primary transition-all cursor-pointer"
-                        onClick={() => { !isLoading && setImageUrl(histImgSrc); }}
+                        onClick={() => { 
+                          if (!isLoading && !isSubmittingFeedback) {
+                            setImageUrl(histImgSrc); 
+                            feedbackForm.reset(); // Reset feedback form when history image is clicked
+                          }
+                        }}
                         data-ai-hint="history thumbnail"
                       />
                        <Button
@@ -494,11 +611,11 @@ export default function PhotoGeniusPage() {
                           size="icon"
                           className="absolute top-1 right-1 h-5 w-5 bg-black/50 text-white hover:bg-black/70 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity z-10 p-0.5"
                           onClick={(e) => {
-                            e.stopPropagation(); // Prevent image click when removing
-                            if (!isLoading) handleRemoveHistoryItem(index);
+                            e.stopPropagation(); 
+                            if (!isLoading && !isSubmittingFeedback) handleRemoveHistoryItem(index);
                           }}
                           aria-label={`Remove history image ${index + 1}`}
-                          disabled={isLoading}
+                          disabled={isLoading || isSubmittingFeedback}
                         >
                           <XCircle className="h-3.5 w-3.5" />
                         </Button>
@@ -516,4 +633,3 @@ export default function PhotoGeniusPage() {
     </main>
   );
 }
-
