@@ -1,3 +1,4 @@
+
 'use server';
 
 import { generatePhoto as generatePhotoFlow, type GeneratePhotoInput } from '@/ai/flows/generate-photo';
@@ -15,11 +16,10 @@ export type PhotoGenerationResult = z.infer<typeof PhotoGenerationResultSchema>;
 
 // Server action to handle photo generation
 export async function handleGeneratePhotoAction(
-  values: GeneratePhotoInput
+  values: GeneratePhotoInput // This type now includes optional referencePhotoDataUri
 ): Promise<PhotoGenerationResult> {
   try {
-    // Validate input (Genkit flow already does this, but good practice)
-    // For this example, we assume GeneratePhotoInput is already validated or simple enough
+    // Input validation is handled by the Genkit flow's inputSchema.
     
     const result = await generatePhotoFlow(values);
 

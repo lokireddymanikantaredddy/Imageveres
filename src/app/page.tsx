@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -5,13 +6,14 @@ import Image from "next/image";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Loader2, Sparkles, Download, AlertCircle } from "lucide-react";
+import { Loader2, Sparkles, Download, AlertCircle, UploadCloud, Trash2, Image as ImageIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -23,11 +25,16 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { handleGeneratePhotoAction, type PhotoGenerationResult } from "./actions";
 import { useToast } from "@/hooks/use-toast";
+import type { GeneratePhotoInput } from "@/ai/flows/generate-photo";
+import { Separator } from "@/components/ui/separator";
 
+const MAX_HISTORY_ITEMS = 10;
+const LOCAL_STORAGE_KEY = "photoGeniusHistory";
 
 const formSchema = z.object({
   prompt: z.string().min(10, {
@@ -35,30 +42,91 @@ const formSchema = z.object({
   }).max(1000, {
     message: "Prompt must not exceed 1000 characters."
   }),
+  referenceImage: typeof window !== 'undefined' 
+    ? z.instanceof(File).optional().refine(file => !file || file.size <= 5 * 1024 * 1024, "Max file size is 5MB.") 
+    : z.any().optional(),
 });
 
 export default function PhotoGeniusPage() {
   const [imageUrl, setImageUrl] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [referenceImagePreview, setReferenceImagePreview] = React.useState<string | null>(null);
+  const [generatedHistory, setGeneratedHistory] = React.useState<string[]>([]);
   const { toast } = useToast();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       prompt: "",
+      referenceImage: undefined,
     },
   });
+
+  React.useEffect(() => {
+    try {
+      const storedHistory = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (storedHistory) {
+        setGeneratedHistory(JSON.parse(storedHistory));
+      }
+    } catch (e) {
+      console.error("Failed to load history from local storage:", e);
+    }
+  }, []);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      form.setValue("referenceImage", file, { shouldValidate: true });
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setReferenceImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      form.setValue("referenceImage", undefined);
+      setReferenceImagePreview(null);
+    }
+  };
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     setImageUrl(null);
     setError(null);
 
+    let referencePhotoDataUri: string | undefined = undefined;
+    if (values.referenceImage) {
+      try {
+        referencePhotoDataUri = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = (error) => reject(error);
+          reader.readAsDataURL(values.referenceImage as File);
+        });
+      } catch (e) {
+        setError("Failed to read reference image.");
+        toast({ variant: "destructive", title: "Error", description: "Could not process the reference image." });
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    const actionInput: GeneratePhotoInput = {
+      prompt: values.prompt,
+      ...(referencePhotoDataUri && { referencePhotoDataUri }),
+    };
+
     try {
-      const result: PhotoGenerationResult = await handleGeneratePhotoAction(values);
+      const result: PhotoGenerationResult = await handleGeneratePhotoAction(actionInput);
       if (result.success && result.data) {
         setImageUrl(result.data);
+        const newHistory = [result.data, ...generatedHistory.filter(item => item !== result.data)].slice(0, MAX_HISTORY_ITEMS);
+        setGeneratedHistory(newHistory);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newHistory));
+        } catch (e) {
+          console.error("Failed to save history to local storage:", e);
+        }
       } else {
         setError(result.error || "An unexpected error occurred.");
         toast({
@@ -84,8 +152,6 @@ export default function PhotoGeniusPage() {
     if (!imageUrl) return;
     const link = document.createElement('a');
     link.href = imageUrl;
-    
-    // Extract file extension from MIME type, default to png
     let extension = 'png';
     try {
       const mimeTypeMatch = imageUrl.match(/^data:(image\/[^;]+);base64,/);
@@ -94,22 +160,29 @@ export default function PhotoGeniusPage() {
         extension = mimeType.split('/')[1] || 'png';
       }
     } catch (e) {
-      // fallback to png if regex or split fails
       console.warn("Could not determine image extension from data URI, defaulting to png.", e)
     }
-
     link.download = `photogenius-art.${extension}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
-  
-  // Effect to ensure client-side only execution for date
+
+  const handleClearHistory = () => {
+    setGeneratedHistory([]);
+    setImageUrl(null); // Optionally clear current image as well
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    } catch (e) {
+      console.error("Failed to clear history from local storage:", e);
+    }
+    toast({ title: "History Cleared", description: "Your image generation history has been cleared." });
+  };
+
   const [currentYear, setCurrentYear] = React.useState<number | null>(null);
   React.useEffect(() => {
     setCurrentYear(new Date().getFullYear());
   }, []);
-
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-background p-4 sm:p-8 md:p-12 selection:bg-primary/30 selection:text-primary-foreground">
@@ -140,7 +213,8 @@ export default function PhotoGeniusPage() {
                           placeholder="e.g., A majestic lion wearing a crown, photorealistic masterpiece, 4k"
                           className="resize-none text-base border-input focus:border-primary focus:ring-primary"
                           {...field}
-                          rows={4}
+                          rows={3}
+                          disabled={isLoading}
                           aria-describedby="prompt-form-message"
                         />
                       </FormControl>
@@ -148,6 +222,45 @@ export default function PhotoGeniusPage() {
                     </FormItem>
                   )}
                 />
+
+                <FormField
+                  control={form.control}
+                  name="referenceImage"
+                  render={({ fieldState }) => (
+                    <FormItem>
+                      <FormLabel htmlFor="reference-image-input" className="text-lg font-medium text-foreground">
+                        Optional: Add Reference Image
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          id="reference-image-input"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          disabled={isLoading}
+                          className="text-base border-input focus:border-primary focus:ring-primary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                          aria-describedby="reference-image-form-message"
+                        />
+                      </FormControl>
+                      <FormMessage id="reference-image-form-message">{fieldState.error?.message}</FormMessage>
+                    </FormItem>
+                  )}
+                />
+
+                {referenceImagePreview && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Reference image preview:</p>
+                    <Image
+                      src={referenceImagePreview}
+                      alt="Reference image preview"
+                      width={100}
+                      height={100}
+                      className="rounded-md border border-border object-cover"
+                      data-ai-hint="reference preview"
+                    />
+                  </div>
+                )}
+
                 <Button
                   type="submit"
                   disabled={isLoading}
@@ -170,7 +283,7 @@ export default function PhotoGeniusPage() {
               </form>
             </Form>
 
-            {error && !isLoading && ( // Only show this specific alert if not loading and error exists
+            {error && !isLoading && (
               <Alert variant="destructive" className="mt-6">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Generation Failed</AlertTitle>
@@ -187,7 +300,7 @@ export default function PhotoGeniusPage() {
                   <Image
                     src={imageUrl}
                     alt={form.getValues().prompt || "Generated photo"}
-                    width={1024} 
+                    width={1024}
                     height={1024}
                     className="h-full w-full object-contain"
                     priority
@@ -199,6 +312,7 @@ export default function PhotoGeniusPage() {
                   className="w-full text-base py-3 rounded-md border-primary/50 text-primary hover:bg-primary/10 hover:text-primary focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-2"
                   variant="outline"
                   aria-label="Download generated photo"
+                  disabled={isLoading}
                 >
                   <Download className="mr-2 h-5 w-5" />
                   Download Photo
@@ -212,6 +326,46 @@ export default function PhotoGeniusPage() {
                 </div>
             )}
           </CardContent>
+          {generatedHistory.length > 0 && (
+            <>
+              <Separator />
+              <CardFooter className="p-6 sm:p-8 flex-col items-start space-y-4">
+                <div className="w-full flex justify-between items-center">
+                  <h3 className="text-xl font-headline text-primary">Generation History</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleClearHistory}
+                    disabled={isLoading}
+                    aria-label="Clear image generation history"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Clear History
+                  </Button>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 w-full">
+                  {generatedHistory.map((histImgSrc, index) => (
+                    <button
+                      key={index}
+                      onClick={() => { !isLoading && setImageUrl(histImgSrc); }}
+                      disabled={isLoading}
+                      className="aspect-square rounded-md overflow-hidden border-2 border-transparent hover:border-primary focus:border-primary focus:outline-none transition-all"
+                      aria-label={`View generated image ${index + 1} from history`}
+                    >
+                      <Image
+                        src={histImgSrc}
+                        alt={`History image ${index + 1}`}
+                        width={100}
+                        height={100}
+                        className="h-full w-full object-cover"
+                        data-ai-hint="history thumbnail"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </CardFooter>
+            </>
+          )}
         </Card>
         <footer className="mt-8 sm:mt-12 text-center text-sm text-muted-foreground">
           {currentYear !== null ? <p>&copy; {currentYear} PhotoGenius. All rights reserved.</p> : <div className="h-4 w-48 bg-muted-foreground/20 mx-auto rounded animate-pulse"></div>}
