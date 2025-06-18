@@ -1,5 +1,5 @@
 // src/lib/firebase-admin.ts
-'use server';
+// 'use server'; directive removed
 
 import * as admin from 'firebase-admin';
 
