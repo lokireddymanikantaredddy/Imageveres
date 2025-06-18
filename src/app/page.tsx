@@ -6,7 +6,7 @@ import Image from "next/image";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Loader2, Sparkles, Download, AlertCircle, UploadCloud, Trash2, Image as ImageIcon } from "lucide-react";
+import { Loader2, Sparkles, Download, AlertCircle, UploadCloud, Trash2, Image as ImageIcon, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -54,6 +54,8 @@ export default function PhotoGeniusPage() {
   const [referenceImagePreview, setReferenceImagePreview] = React.useState<string | null>(null);
   const [generatedHistory, setGeneratedHistory] = React.useState<string[]>([]);
   const { toast } = useToast();
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -71,8 +73,6 @@ export default function PhotoGeniusPage() {
       }
     } catch (e) {
       console.error("Failed to load history from local storage:", e);
-      // Optionally clear corrupted history
-      // localStorage.removeItem(LOCAL_STORAGE_KEY);
     }
   }, []);
 
@@ -88,6 +88,17 @@ export default function PhotoGeniusPage() {
     } else {
       form.setValue("referenceImage", undefined);
       setReferenceImagePreview(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleRemoveReferenceImage = () => {
+    form.setValue("referenceImage", undefined, { shouldValidate: true });
+    setReferenceImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""; // Reset the file input
     }
   };
 
@@ -123,16 +134,15 @@ export default function PhotoGeniusPage() {
       if (result.success && result.data) {
         setImageUrl(result.data);
         const newHistoryArray = [result.data, ...generatedHistory.filter(item => item !== result.data)].slice(0, MAX_HISTORY_ITEMS);
-        setGeneratedHistory(newHistoryArray); // Optimistically update React state
+        setGeneratedHistory(newHistoryArray); 
 
         try {
           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newHistoryArray));
         } catch (e: any) {
-          // Check for QuotaExceededError (name and code for cross-browser compatibility)
           if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.code === 22 || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
             console.warn("Local storage quota exceeded. Attempting to prune history...");
             toast({
-              variant: "default", // Using default variant for less alarming notification
+              variant: "default",
               title: "Making Space in History",
               description: "Storage full. Removing oldest images to save the new one.",
               duration: 5000,
@@ -141,15 +151,13 @@ export default function PhotoGeniusPage() {
             let historyToSaveAttempt = [...newHistoryArray];
             let successfullySaved = false;
 
-            // Try to make space by removing the oldest items (which are at the end of the array)
             for (let i = 0; i < MAX_HISTORY_ITEMS; i++) {
-              if (historyToSaveAttempt.length === 0) break; // Nothing left to save or remove
+              if (historyToSaveAttempt.length === 0) break; 
 
               try {
                 localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(historyToSaveAttempt));
                 successfullySaved = true;
                 if (historyToSaveAttempt.length < newHistoryArray.length) {
-                  // If we had to prune, update React state to reflect actual saved history
                   setGeneratedHistory(historyToSaveAttempt);
                   toast({
                     title: "History Pruned",
@@ -157,23 +165,21 @@ export default function PhotoGeniusPage() {
                     duration: 3000,
                   });
                 }
-                break; // Exit loop on successful save
+                break; 
               } catch (pruningError: any) {
                 if (pruningError instanceof DOMException && (pruningError.name === 'QuotaExceededError' || pruningError.code === 22 || pruningError.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
                   if (historyToSaveAttempt.length > 0) {
-                    historyToSaveAttempt.pop(); // Remove the oldest item
+                    historyToSaveAttempt.pop(); 
                   } else {
-                    break; // History became empty, cannot prune further
+                    break; 
                   }
                 } else {
-                  // A different error occurred during pruning attempt
                   console.error("Error during history pruning:", pruningError);
                   toast({
                     variant: "destructive",
                     title: "History Save Error",
                     description: "An unexpected error occurred while trying to prune history.",
                   });
-                  // Decide if to rethrow or break. For now, break to avoid infinite loops on persistent non-quota errors.
                   break; 
                 }
               }
@@ -186,13 +192,8 @@ export default function PhotoGeniusPage() {
                 title: "Storage Full",
                 description: "Failed to save to history. New image may be too large or storage is critically full.",
               });
-              // React state `generatedHistory` is `newHistoryArray` (optimistic)
-              // localStorage might be out of sync or empty.
-              // To restore consistency, you could try to load from localStorage again (which might be empty or old)
-              // or clear React state if nothing could be saved: setGeneratedHistory([]);
             }
           } else {
-            // Other localStorage errors not related to quota
             console.error("Failed to save history to local storage (non-quota error):", e);
             toast({
               variant: "destructive",
@@ -244,7 +245,6 @@ export default function PhotoGeniusPage() {
 
   const handleClearHistory = () => {
     setGeneratedHistory([]);
-    // setImageUrl(null); // Optionally clear current image as well
     try {
       localStorage.removeItem(LOCAL_STORAGE_KEY);
     } catch (e) {
@@ -314,6 +314,7 @@ export default function PhotoGeniusPage() {
                           disabled={isLoading}
                           className="text-base border-input focus:border-primary focus:ring-primary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                           aria-describedby="reference-image-form-message"
+                          ref={fileInputRef}
                         />
                       </FormControl>
                       <FormMessage id="reference-image-form-message">{fieldState.error?.message}</FormMessage>
@@ -322,16 +323,29 @@ export default function PhotoGeniusPage() {
                 />
 
                 {referenceImagePreview && (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">Reference image preview:</p>
-                    <Image
-                      src={referenceImagePreview}
-                      alt="Reference image preview"
-                      width={100}
-                      height={100}
-                      className="rounded-md border border-border object-cover"
-                      data-ai-hint="reference preview"
-                    />
+                    <div className="relative group w-28 h-28">
+                      <Image
+                        src={referenceImagePreview}
+                        alt="Reference image preview"
+                        width={100}
+                        height={100}
+                        className="rounded-md border border-border object-cover w-full h-full"
+                        data-ai-hint="reference preview"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute top-1 right-1 h-6 w-6 bg-black/50 text-white hover:bg-black/70 hover:text-white opacity-70 group-hover:opacity-100 transition-opacity"
+                        onClick={handleRemoveReferenceImage}
+                        aria-label="Remove reference image"
+                        disabled={isLoading}
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 )}
 
