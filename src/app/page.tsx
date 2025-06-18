@@ -107,8 +107,6 @@ export default function PhotoGeniusPage() {
           toast({ variant: "destructive", title: "Error", description: "Could not generate previews for some images." });
         });
       
-      // If user selected files, don't clear the input. If they cancelled, event.target.files might be empty.
-      // If combinedFiles is empty after logic, then clear the input.
       if (combinedFiles.length === 0 && fileInputRef.current) {
          fileInputRef.current.value = "";
       }
@@ -281,6 +279,18 @@ export default function PhotoGeniusPage() {
       console.error("Failed to clear history from local storage:", e);
     }
     toast({ title: "History Cleared", description: "Your image generation history has been cleared." });
+  };
+
+  const handleRemoveHistoryItem = (indexToRemove: number) => {
+    const updatedHistory = generatedHistory.filter((_, index) => index !== indexToRemove);
+    setGeneratedHistory(updatedHistory);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedHistory));
+      toast({ title: "Image Removed", description: "Image removed from history." });
+    } catch (e) {
+      console.error("Failed to update history in local storage:", e);
+      toast({ variant: "destructive", title: "Error", description: "Could not update history." });
+    }
   };
 
   const [currentYear, setCurrentYear] = React.useState<number | null>(null);
@@ -468,22 +478,31 @@ export default function PhotoGeniusPage() {
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 w-full">
                   {generatedHistory.map((histImgSrc, index) => (
-                    <button
-                      key={index}
-                      onClick={() => { !isLoading && setImageUrl(histImgSrc); }}
-                      disabled={isLoading}
-                      className="aspect-square rounded-md overflow-hidden border-2 border-transparent hover:border-primary focus:border-primary focus:outline-none transition-all"
-                      aria-label={`View generated image ${index + 1} from history`}
-                    >
+                    <div key={index} className="relative group aspect-square">
                       <Image
                         src={histImgSrc}
                         alt={`History image ${index + 1}`}
                         width={100}
                         height={100}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-cover rounded-md border-2 border-transparent group-hover:border-primary transition-all cursor-pointer"
+                        onClick={() => { !isLoading && setImageUrl(histImgSrc); }}
                         data-ai-hint="history thumbnail"
                       />
-                    </button>
+                       <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute top-1 right-1 h-5 w-5 bg-black/50 text-white hover:bg-black/70 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity z-10 p-0.5"
+                          onClick={(e) => {
+                            e.stopPropagation(); // Prevent image click when removing
+                            if (!isLoading) handleRemoveHistoryItem(index);
+                          }}
+                          aria-label={`Remove history image ${index + 1}`}
+                          disabled={isLoading}
+                        >
+                          <XCircle className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
                   ))}
                 </div>
               </CardFooter>
@@ -497,3 +516,4 @@ export default function PhotoGeniusPage() {
     </main>
   );
 }
+
