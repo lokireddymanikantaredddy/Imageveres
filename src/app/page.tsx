@@ -71,6 +71,8 @@ export default function PhotoGeniusPage() {
       }
     } catch (e) {
       console.error("Failed to load history from local storage:", e);
+      // Optionally clear corrupted history
+      // localStorage.removeItem(LOCAL_STORAGE_KEY);
     }
   }, []);
 
@@ -120,12 +122,84 @@ export default function PhotoGeniusPage() {
       const result: PhotoGenerationResult = await handleGeneratePhotoAction(actionInput);
       if (result.success && result.data) {
         setImageUrl(result.data);
-        const newHistory = [result.data, ...generatedHistory.filter(item => item !== result.data)].slice(0, MAX_HISTORY_ITEMS);
-        setGeneratedHistory(newHistory);
+        const newHistoryArray = [result.data, ...generatedHistory.filter(item => item !== result.data)].slice(0, MAX_HISTORY_ITEMS);
+        setGeneratedHistory(newHistoryArray); // Optimistically update React state
+
         try {
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newHistory));
-        } catch (e) {
-          console.error("Failed to save history to local storage:", e);
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newHistoryArray));
+        } catch (e: any) {
+          // Check for QuotaExceededError (name and code for cross-browser compatibility)
+          if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.code === 22 || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+            console.warn("Local storage quota exceeded. Attempting to prune history...");
+            toast({
+              variant: "default", // Using default variant for less alarming notification
+              title: "Making Space in History",
+              description: "Storage full. Removing oldest images to save the new one.",
+              duration: 5000,
+            });
+
+            let historyToSaveAttempt = [...newHistoryArray];
+            let successfullySaved = false;
+
+            // Try to make space by removing the oldest items (which are at the end of the array)
+            for (let i = 0; i < MAX_HISTORY_ITEMS; i++) {
+              if (historyToSaveAttempt.length === 0) break; // Nothing left to save or remove
+
+              try {
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(historyToSaveAttempt));
+                successfullySaved = true;
+                if (historyToSaveAttempt.length < newHistoryArray.length) {
+                  // If we had to prune, update React state to reflect actual saved history
+                  setGeneratedHistory(historyToSaveAttempt);
+                  toast({
+                    title: "History Pruned",
+                    description: `Removed ${newHistoryArray.length - historyToSaveAttempt.length} old image(s).`,
+                    duration: 3000,
+                  });
+                }
+                break; // Exit loop on successful save
+              } catch (pruningError: any) {
+                if (pruningError instanceof DOMException && (pruningError.name === 'QuotaExceededError' || pruningError.code === 22 || pruningError.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+                  if (historyToSaveAttempt.length > 0) {
+                    historyToSaveAttempt.pop(); // Remove the oldest item
+                  } else {
+                    break; // History became empty, cannot prune further
+                  }
+                } else {
+                  // A different error occurred during pruning attempt
+                  console.error("Error during history pruning:", pruningError);
+                  toast({
+                    variant: "destructive",
+                    title: "History Save Error",
+                    description: "An unexpected error occurred while trying to prune history.",
+                  });
+                  // Decide if to rethrow or break. For now, break to avoid infinite loops on persistent non-quota errors.
+                  break; 
+                }
+              }
+            }
+
+            if (!successfullySaved) {
+              console.error("Could not save to local storage even after pruning.", e);
+              toast({
+                variant: "destructive",
+                title: "Storage Full",
+                description: "Failed to save to history. New image may be too large or storage is critically full.",
+              });
+              // React state `generatedHistory` is `newHistoryArray` (optimistic)
+              // localStorage might be out of sync or empty.
+              // To restore consistency, you could try to load from localStorage again (which might be empty or old)
+              // or clear React state if nothing could be saved: setGeneratedHistory([]);
+            }
+          } else {
+            // Other localStorage errors not related to quota
+            console.error("Failed to save history to local storage (non-quota error):", e);
+            toast({
+              variant: "destructive",
+              title: "History Save Error",
+              description: "An unexpected error occurred while saving image history.",
+            });
+          }
         }
       } else {
         setError(result.error || "An unexpected error occurred.");
@@ -170,7 +244,7 @@ export default function PhotoGeniusPage() {
 
   const handleClearHistory = () => {
     setGeneratedHistory([]);
-    setImageUrl(null); // Optionally clear current image as well
+    // setImageUrl(null); // Optionally clear current image as well
     try {
       localStorage.removeItem(LOCAL_STORAGE_KEY);
     } catch (e) {
