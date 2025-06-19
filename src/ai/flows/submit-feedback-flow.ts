@@ -14,6 +14,7 @@ import { firestoreAdmin } from '@/lib/firebase-admin'; // Import the initialized
 
 const SubmitFeedbackInputSchema = z.object({
   name: z.string().optional().describe('The name of the user providing feedback (optional).'),
+  rating: z.number().min(0).max(5).optional().describe('The star rating given by the user (0-5, where 0 means no rating).'),
   feedbackText: z.string().min(1, 'Feedback text cannot be empty.').describe('The user\'s feedback text.'),
   imageUrl: z.string().url('Must be a valid URL.').describe('The URL of the image being reviewed.'),
   timestamp: z.string().datetime('Must be a valid ISO 8601 datetime string.').describe('The timestamp of when the feedback was submitted.'),
@@ -52,27 +53,30 @@ const submitFeedbackFlow = ai.defineFlow(
     }
 
     try {
-      const feedbackData = {
+      const feedbackData: any = { // Use 'any' temporarily or create a more specific type
         name: input.name || 'Anonymous',
         feedbackText: input.feedbackText,
         imageUrl: input.imageUrl,
-        timestamp: new Date(input.timestamp), // Convert ISO string to Firestore Timestamp compatible Date object
-        // You could add more fields here, e.g., user ID if you implement authentication
+        timestamp: new Date(input.timestamp), 
       };
 
-      await firestoreAdmin.collection('imageFeedback').add(feedbackData);
+      if (input.rating !== undefined && input.rating !== null && input.rating > 0) {
+        feedbackData.rating = input.rating;
+      }
+
+
+      const docRef = await firestoreAdmin.collection('imageFeedback').add(feedbackData);
       
-      console.log('Feedback successfully saved to Firestore document with ID:', feedbackData); // Log on success
+      console.log('Feedback successfully saved to Firestore document with ID:', docRef.id); 
       return { success: true, message: 'Feedback submitted successfully and saved!' };
 
     } catch (error) {
       console.error('Error saving feedback to Firestore:', error);
       let publicErrorMessage = 'Failed to submit feedback due to a server error. Please try again later.';
       
-      // Check for common Firebase/GCP errors
       if (error instanceof Error) {
         if (error.message.includes('Missing or insufficient permissions') || 
-            (error.hasOwnProperty('code') && (error as any).code === 7)) { // Firestore permission denied code
+            (error.hasOwnProperty('code') && (error as any).code === 7)) { 
           publicErrorMessage = 'Server permission error: Unable to save feedback. Please contact support.';
         } else if (error.message.includes('The project is unavailable')) {
            publicErrorMessage = 'The feedback service is temporarily unavailable. Please try again later.';
@@ -82,3 +86,4 @@ const submitFeedbackFlow = ai.defineFlow(
     }
   }
 );
+

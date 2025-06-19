@@ -6,7 +6,7 @@ import Image from "next/image";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useForm as useFeedbackForm } from "react-hook-form"; // Renamed for clarity
 import { z } from "zod";
-import { Loader2, Sparkles, Download, AlertCircle, UploadCloud, Trash2, Image as ImageIcon, XCircle, MessageSquareQuote, Send } from "lucide-react";
+import { Loader2, Sparkles, Download, AlertCircle, UploadCloud, Trash2, Image as ImageIcon, XCircle, MessageSquareQuote, Send, Star } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { GeneratePhotoInput } from "@/ai/flows/generate-photo";
 import type { SubmitFeedbackInput } from "@/ai/flows/submit-feedback-flow";
 import { Separator } from "@/components/ui/separator";
+import { StarRatingInput } from "@/components/custom/star-rating"; // Import StarRatingInput
 
 const MAX_HISTORY_ITEMS = 10;
 const LOCAL_STORAGE_KEY = "photoGeniusHistory";
@@ -56,6 +57,7 @@ const photoFormSchema = z.object({
 
 const feedbackFormSchema = z.object({
   name: z.string().optional(),
+  rating: z.number().min(0).max(5).optional().default(0), // 0 means no rating
   feedbackText: z.string().min(5, {
     message: "Feedback must be at least 5 characters.",
   }).max(500, {
@@ -86,6 +88,7 @@ export default function PhotoGeniusPage() {
     resolver: zodResolver(feedbackFormSchema),
     defaultValues: {
       name: "",
+      rating: 0,
       feedbackText: "",
     },
   });
@@ -149,9 +152,9 @@ export default function PhotoGeniusPage() {
 
   async function onPhotoSubmit(values: z.infer<typeof photoFormSchema>) {
     setIsLoading(true);
-    setImageUrl(null); // Clear previous image and feedback form
+    setImageUrl(null); 
     setError(null);
-    feedbackForm.reset(); // Reset feedback form if a new image is generated
+    feedbackForm.reset(); 
 
     let referencePhotoDataUris: string[] | undefined = undefined;
     if (values.referenceImages && values.referenceImages.length > 0) {
@@ -281,7 +284,8 @@ export default function PhotoGeniusPage() {
     setIsSubmittingFeedback(true);
     try {
       const feedbackInput: Omit<SubmitFeedbackInput, 'timestamp'> = {
-        name: values.name || undefined, // Ensure empty string becomes undefined
+        name: values.name || undefined, 
+        rating: values.rating && values.rating > 0 ? values.rating : undefined,
         feedbackText: values.feedbackText,
         imageUrl: imageUrl,
       };
@@ -522,6 +526,25 @@ export default function PhotoGeniusPage() {
                           </FormItem>
                         )}
                       />
+                       <FormField
+                        control={feedbackForm.control}
+                        name="rating"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel htmlFor="feedback-rating">Rate this image (Optional)</FormLabel>
+                            <FormControl>
+                              <StarRatingInput
+                                id="feedback-rating"
+                                value={field.value || 0}
+                                onChange={field.onChange}
+                                disabled={isSubmittingFeedback || isLoading}
+                                size={28}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                       <FormField
                         control={feedbackForm.control}
                         name="feedbackText"
@@ -600,7 +623,7 @@ export default function PhotoGeniusPage() {
                         onClick={() => { 
                           if (!isLoading && !isSubmittingFeedback) {
                             setImageUrl(histImgSrc); 
-                            feedbackForm.reset(); // Reset feedback form when history image is clicked
+                            feedbackForm.reset(); 
                           }
                         }}
                         data-ai-hint="history thumbnail"
@@ -633,5 +656,3 @@ export default function PhotoGeniusPage() {
     </main>
   );
 }
-
-    

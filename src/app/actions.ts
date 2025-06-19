@@ -17,10 +17,9 @@ export type PhotoGenerationResult = z.infer<typeof PhotoGenerationResultSchema>;
 
 // Server action to handle photo generation
 export async function handleGeneratePhotoAction(
-  values: GeneratePhotoInput // This type now includes optional referencePhotoDataUris (array)
+  values: GeneratePhotoInput 
 ): Promise<PhotoGenerationResult> {
   try {
-    // Input validation is handled by the Genkit flow's inputSchema.
     
     const result = await generatePhotoFlow(values);
 
@@ -38,7 +37,6 @@ export async function handleGeneratePhotoAction(
     } else if (typeof error === 'string') {
       errorMessage = error;
     }
-    // Potentially sanitize or provide a more generic error message to the client
     return { success: false, error: `Photo generation failed: ${errorMessage}` };
   }
 }
@@ -53,15 +51,15 @@ export type FeedbackSubmissionResult = z.infer<typeof FeedbackSubmissionResultSc
 
 // Server action for submitting feedback
 export async function handleFeedbackSubmitAction(
-  values: Omit<SubmitFeedbackInput, 'timestamp'> // timestamp will be added here
+  values: Omit<SubmitFeedbackInput, 'timestamp'> 
 ): Promise<FeedbackSubmissionResult> {
   try {
     const inputWithTimestamp: SubmitFeedbackInput = {
       ...values,
+      rating: values.rating && values.rating > 0 ? values.rating : undefined, // Ensure 0 is not sent if not rated
       timestamp: new Date().toISOString(),
     };
     
-    // Input validation is handled by the Genkit flow's inputSchema.
     const result = await submitFeedbackFlow(inputWithTimestamp);
     return result;
 
