@@ -55,6 +55,7 @@ const submitFeedbackFlow = ai.defineFlow(
 
     let imageUrl = input.imageUrl;
     // If imageUrl is a data URI, upload to Firebase Storage
+    /*
     if (imageUrl.startsWith('data:image/')) {
       if (!storageAdmin) {
         return { success: false, message: 'Server error: Storage is not configured.' };
@@ -82,12 +83,13 @@ const submitFeedbackFlow = ai.defineFlow(
         return { success: false, message: 'Failed to upload image for feedback.' };
       }
     }
+    */
 
     try {
       const feedbackData: any = {
         name: input.name || 'Anonymous',
         feedbackText: input.feedbackText,
-        imageUrl: imageUrl,
+        // imageUrl: imageUrl, // Commented out, not saving imageUrl
         timestamp: new Date(input.timestamp), 
       };
       if (input.rating !== undefined && input.rating !== null && input.rating > 0) {
