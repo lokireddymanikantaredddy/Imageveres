@@ -1,5 +1,5 @@
+
 // src/lib/firebase-admin.ts
-// 'use server'; directive removed
 
 import * as admin from 'firebase-admin';
 
@@ -11,15 +11,14 @@ function initializeFirebaseAdmin() {
     return;
   }
 
-  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    // Check if the path to credentials might be relative and needs resolving
-    // For Firebase App Hosting, GOOGLE_APPLICATION_CREDENTIALS might be set directly
-    // to the content of the key or a system path. Usually, just providing the filename
-    // (if in root) or a relative path for local dev is fine.
-    // The SDK handles finding the file based on this env var.
+  const credsEnvVar = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+  if (credsEnvVar) {
+    console.log(`[Firebase Admin] GOOGLE_APPLICATION_CREDENTIALS is set to: "${credsEnvVar}"`);
 
     if (admin.apps.length === 0) {
       try {
+        console.log('[Firebase Admin] Initializing Firebase Admin SDK...');
         admin.initializeApp({
           credential: admin.credential.applicationDefault(),
           // You can also explicitly set projectId if needed, though applicationDefault usually infers it.
@@ -27,23 +26,23 @@ function initializeFirebaseAdmin() {
         });
         firestoreAdmin = admin.firestore();
         firebaseAdminInitialized = true;
-        console.log('Firebase Admin SDK initialized successfully.');
+        console.log('[Firebase Admin] Firebase Admin SDK initialized successfully.');
       } catch (error) {
-        console.error('Firebase Admin SDK initialization failed:', error);
-        // Log the error but don't throw, so the app can still run if other parts don't depend on it.
-        // The flow using this will handle the null firestoreAdmin case.
+        console.error('[Firebase Admin] Firebase Admin SDK initialization failed. Error details:', error);
+        // The flow using this will handle the null firestoreAdmin case and inform the user.
       }
     } else {
       // App already initialized
       firestoreAdmin = admin.firestore();
       firebaseAdminInitialized = true;
+      console.log('[Firebase Admin] Firebase Admin SDK was already initialized.');
     }
   } else {
     console.warn(
-      'WARNING: GOOGLE_APPLICATION_CREDENTIALS environment variable is not set. ' +
+      '[Firebase Admin] WARNING: GOOGLE_APPLICATION_CREDENTIALS environment variable is not set. ' +
       'Firebase Admin SDK (for Firestore) will not be initialized. ' +
       'Feedback submission will not be saved to Firestore. ' +
-      'Please refer to the setup instructions in the .env file or README.'
+      'Please refer to the setup instructions (e.g., in .env or README) to set this variable to the path of your service account key JSON file.'
     );
   }
 }
