@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview Handles submission of user feedback for generated images and saves it to Firestore.
@@ -10,7 +9,9 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { firestoreAdmin } from '@/lib/firebase-admin'; // Import the initialized Firestore admin instance
+import { firestoreAdmin, storageAdmin } from '@/lib/firebase-admin'; // Import the initialized Firestore and Storage admin instances
+
+const STORAGE_BUCKET_NAME = 'photogenius-6b87d.firebasestorage.app';
 
 const SubmitFeedbackInputSchema = z.object({
   name: z.string().optional().describe('The name of the user providing feedback (optional).'),
@@ -52,28 +53,52 @@ const submitFeedbackFlow = ai.defineFlow(
       };
     }
 
+    let imageUrl = input.imageUrl;
+    // If imageUrl is a data URI, upload to Firebase Storage
+    if (imageUrl.startsWith('data:image/')) {
+      if (!storageAdmin) {
+        return { success: false, message: 'Server error: Storage is not configured.' };
+      }
+      try {
+        // Extract base64 data
+        const matches = imageUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+        if (!matches) {
+          return { success: false, message: 'Invalid image data format.' };
+        }
+        const mimeType = matches[1];
+        const base64Data = matches[2];
+        const buffer = Buffer.from(base64Data, 'base64');
+        const fileName = `feedback-images/${Date.now()}-${Math.random().toString(36).substring(2, 10)}.png`;
+        const bucket = storageAdmin.bucket(STORAGE_BUCKET_NAME);
+        const file = bucket.file(fileName);
+        await file.save(buffer, {
+          metadata: { contentType: mimeType },
+          public: true,
+        });
+        // Get public URL
+        imageUrl = `https://storage.googleapis.com/${STORAGE_BUCKET_NAME}/${fileName}`;
+      } catch (err) {
+        console.error('Error uploading image to Firebase Storage:', err);
+        return { success: false, message: 'Failed to upload image for feedback.' };
+      }
+    }
+
     try {
-      const feedbackData: any = { // Use 'any' temporarily or create a more specific type
+      const feedbackData: any = {
         name: input.name || 'Anonymous',
         feedbackText: input.feedbackText,
-        imageUrl: input.imageUrl,
+        imageUrl: imageUrl,
         timestamp: new Date(input.timestamp), 
       };
-
       if (input.rating !== undefined && input.rating !== null && input.rating > 0) {
         feedbackData.rating = input.rating;
       }
-
-
       const docRef = await firestoreAdmin.collection('imageFeedback').add(feedbackData);
-      
       console.log('Feedback successfully saved to Firestore document with ID:', docRef.id); 
       return { success: true, message: 'Feedback submitted successfully and saved!' };
-
     } catch (error) {
       console.error('Error saving feedback to Firestore:', error);
       let publicErrorMessage = 'Failed to submit feedback due to a server error. Please try again later.';
-      
       if (error instanceof Error) {
         if (error.message.includes('Missing or insufficient permissions') || 
             (error.hasOwnProperty('code') && (error as any).code === 7)) { 

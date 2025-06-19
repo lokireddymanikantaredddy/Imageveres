@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -139,7 +138,7 @@ export default function PhotoGeniusPage() {
 
   const handleRemoveReferenceImage = (indexToRemove: number) => {
     const currentFiles = photoForm.getValues().referenceImages || [];
-    const updatedFiles = currentFiles.filter((_, index) => index !== indexToRemove);
+    const updatedFiles = currentFiles.filter((_: File, index: number) => index !== indexToRemove);
     photoForm.setValue("referenceImages", updatedFiles, { shouldValidate: true });
 
     const updatedPreviews = referenceImagePreviews.filter((_, index) => index !== indexToRemove);
@@ -160,7 +159,7 @@ export default function PhotoGeniusPage() {
     if (values.referenceImages && values.referenceImages.length > 0) {
       try {
         referencePhotoDataUris = await Promise.all(
-          values.referenceImages.map(file => {
+          values.referenceImages.map((file: File) => {
             return new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
               reader.onload = () => resolve(reader.result as string);
@@ -357,12 +356,22 @@ export default function PhotoGeniusPage() {
       <div className="w-full max-w-2xl">
         <Card className="shadow-2xl rounded-xl overflow-hidden">
           <CardHeader className="bg-card-foreground/5 p-6 sm:p-8">
-            <CardTitle className="text-3xl sm:text-4xl font-headline text-center text-primary">
-              PhotoGenius
-            </CardTitle>
-            <CardDescription className="text-center text-muted-foreground text-sm sm:text-base pt-2">
-              Transform your ideas into stunning visuals. Describe what you want to see, and let AI bring it to life.
-            </CardDescription>
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle className="text-3xl sm:text-4xl font-headline text-center text-primary">
+                  PhotoGenius
+                </CardTitle>
+                <CardDescription className="text-center text-muted-foreground text-sm sm:text-base pt-2">
+                  Transform your ideas into stunning visuals. Describe what you want to see, and let AI bring it to life.
+                </CardDescription>
+              </div>
+              {/* <Button variant="outline" asChild>
+                <a href="/" className="flex items-center gap-2">
+                  <MessageSquareQuote className="w-4 h-4" />
+                  View Feedback
+                </a>
+              </Button> */}
+            </div>
           </CardHeader>
           <CardContent className="p-6 sm:p-8 space-y-6 sm:space-y-8">
             <Form {...photoForm}>
@@ -534,7 +543,6 @@ export default function PhotoGeniusPage() {
                             <FormLabel htmlFor="feedback-rating">Rate this image (Optional)</FormLabel>
                             <FormControl>
                               <StarRatingInput
-                                id="feedback-rating"
                                 value={field.value || 0}
                                 onChange={field.onChange}
                                 disabled={isSubmittingFeedback || isLoading}
