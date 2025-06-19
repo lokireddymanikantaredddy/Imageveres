@@ -286,7 +286,7 @@ export default function PhotoGeniusPage() {
         name: values.name || undefined, 
         rating: values.rating && values.rating > 0 ? values.rating : undefined,
         feedbackText: values.feedbackText,
-        imageUrl: imageUrl,
+        imageUrl: "",
       };
       const result: FeedbackSubmissionResult = await handleFeedbackSubmitAction(feedbackInput);
       if (result.success) {
@@ -356,7 +356,15 @@ export default function PhotoGeniusPage() {
       <div className="w-full max-w-2xl">
         <Card className="shadow-2xl rounded-xl overflow-hidden">
           <CardHeader className="bg-card-foreground/5 p-6 sm:p-8">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col items-center justify-center mb-4">
+              <Image
+                src={require("@/../src/asserts/cat image.jpg")}
+                alt="Cat Logo"
+                width={96}
+                height={96}
+                className="rounded-full border-primary shadow-lg object-cover hover:scale-110 transition-transform duration-300 grayscale hover:grayscale-0"
+                priority
+              />
               <div>
                 <CardTitle className="text-3xl sm:text-4xl font-headline text-center text-primary">
                   Imageveres
@@ -365,12 +373,6 @@ export default function PhotoGeniusPage() {
                   Transform your ideas into stunning visuals. Describe what you want to see, and let AI bring it to life.
                 </CardDescription>
               </div>
-              {/* <Button variant="outline" asChild>
-                <a href="/" className="flex items-center gap-2">
-                  <MessageSquareQuote className="w-4 h-4" />
-                  View Feedback
-                </a>
-              </Button> */}
             </div>
           </CardHeader>
           <CardContent className="p-6 sm:p-8 space-y-6 sm:space-y-8">
