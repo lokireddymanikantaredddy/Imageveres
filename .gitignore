@@ -58,3 +58,6 @@ next-auth.session-token
 *.njsproj
 *.sln
 *.sw?
+
+
+serviceAccount.json
