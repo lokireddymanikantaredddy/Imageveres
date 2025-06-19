@@ -1,6 +1,6 @@
-# PhotoGenius
+# Imageveres
 
-PhotoGenius is an AI-powered photo generation and feedback web app built with Next.js and Firebase. Users can generate images from prompts, upload reference images, and submit feedback on generated results.
+Imageveres is an AI-powered photo generation and feedback web app built with Next.js and Firebase. Users can generate images from prompts, upload reference images, and submit feedback on generated results.
 
 ## Features
 - Generate AI images from text prompts

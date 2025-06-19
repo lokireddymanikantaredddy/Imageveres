@@ -359,7 +359,7 @@ export default function PhotoGeniusPage() {
             <div className="flex justify-between items-center">
               <div>
                 <CardTitle className="text-3xl sm:text-4xl font-headline text-center text-primary">
-                  PhotoGenius
+                  Imageveres
                 </CardTitle>
                 <CardDescription className="text-center text-muted-foreground text-sm sm:text-base pt-2">
                   Transform your ideas into stunning visuals. Describe what you want to see, and let AI bring it to life.
@@ -658,7 +658,7 @@ export default function PhotoGeniusPage() {
           )}
         </Card>
         <footer className="mt-8 sm:mt-12 text-center text-sm text-muted-foreground">
-          {currentYear !== null ? <p>&copy; {currentYear} PhotoGenius. All rights reserved.</p> : <div className="h-4 w-48 bg-muted-foreground/20 mx-auto rounded animate-pulse"></div>}
+          {currentYear !== null ? <p>&copy; {currentYear} Imageveres. All rights reserved.</p> : <div className="h-4 w-48 bg-muted-foreground/20 mx-auto rounded animate-pulse"></div>}
         </footer>
       </div>
     </main>
