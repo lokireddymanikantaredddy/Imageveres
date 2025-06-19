@@ -10,13 +10,21 @@ let storageAdmin: Storage | null = null;
 try {
   // Initialize the Firebase Admin SDK
   if (getApps().length === 0) {
-    const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    if (!serviceAccountPath) {
-      throw new Error('GOOGLE_APPLICATION_CREDENTIALS environment variable is not set');
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+    if (!projectId || !clientEmail || !privateKey) {
+      throw new Error('Missing one or more Firebase Admin environment variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY)');
     }
+    // Replace escaped newlines with actual newlines for private key
+    privateKey = privateKey.replace(/\\n/g, '\n');
 
     initializeApp({
-      credential: cert(serviceAccountPath),
+      credential: cert({
+        projectId,
+        clientEmail,
+        privateKey,
+      }),
       storageBucket: 'photogenius-6b87d.firebasestorage.app'
     });
   }
