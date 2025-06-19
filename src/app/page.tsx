@@ -286,7 +286,7 @@ export default function PhotoGeniusPage() {
         name: values.name || undefined, 
         rating: values.rating && values.rating > 0 ? values.rating : undefined,
         feedbackText: values.feedbackText,
-        imageUrl: "",
+        imageUrl: "https://example.com/placeholder.jpg",
       };
       const result: FeedbackSubmissionResult = await handleFeedbackSubmitAction(feedbackInput);
       if (result.success) {
